@@ -37,7 +37,7 @@ export default function ReportsPage() {
       const liters = shift.totalLiters || 0;
       const nozzle = getNozzleById(shift.nozzleId);
       const fuel = nozzle ? getFuelTypeById(nozzle.fuelTypeId) : null;
-      const amount = shift.totalAmount || (liters * (fuel?.currentPrice || 0));
+      const amount = shift.totalAmount || (liters * (shift.fuelRate || fuel?.currentPrice || 0));
       const payment = getPaymentForShift(shift.id);
 
       totalLiters += liters;

@@ -63,7 +63,7 @@ export default function ShiftsPage() {
           const fuel = nozzle ? getFuelTypeById(nozzle.fuelTypeId) : null;
           const payment = getPaymentForShift(shift.id);
           const liters = shift.totalLiters || 0;
-          const expected = shift.totalAmount || (liters * (fuel?.currentPrice || 0));
+          const expected = shift.totalAmount || (liters * (shift.fuelRate || fuel?.currentPrice || 0));
           const collected = payment?.totalCollected || 0;
           const disc = expected - collected;
 

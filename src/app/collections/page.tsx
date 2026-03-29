@@ -312,8 +312,20 @@ export default function CollectionsPage() {
           />
         </div>
 
+        {/* Warning if bank deposit exceeds available cash */}
+        {(parseFloat(bankDeposit) || 0) > collection.previousCashBalance + collection.totalCash && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-600 font-medium">
+            ⚠️ {lang === "hi"
+              ? "बैंक जमा उपलब्ध नकद से अधिक है!"
+              : "Bank deposit exceeds available cash!"}
+          </div>
+        )}
+
         {/* Cash In Hand (auto) */}
-        <div className="bg-orange-50 rounded-xl p-4 text-center">
+        <div className={cn("rounded-xl p-4 text-center",
+          (collection.previousCashBalance + collection.totalCash - (parseFloat(bankDeposit) || 0)) < 0
+            ? "bg-red-50" : "bg-orange-50"
+        )}>
           <p className="text-sm text-gray-500">{t("cash_balance")}</p>
           <p className="text-2xl font-bold text-orange-600">
             {formatCurrency(collection.previousCashBalance + collection.totalCash - (parseFloat(bankDeposit) || 0))}

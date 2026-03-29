@@ -1,7 +1,7 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { IndianRupee, Droplets, Wallet, AlertTriangle, Play, Square, TrendingUp, Banknote } from "lucide-react";
+import { IndianRupee, Droplets, Wallet, AlertTriangle, Play, Square, TrendingUp, Banknote, RefreshCw } from "lucide-react";
 import { getCurrentUser, getTodaySummary, getAlerts, getActiveShiftForEmployee } from "@/lib/store/data";
 import { useLanguage } from "@/lib/i18n/useLanguage";
 import { formatCurrency, formatLiters } from "@/lib/utils";
@@ -17,7 +17,7 @@ export default function DashboardPage() {
   const { lang, t } = useLanguage();
   const router = useRouter();
 
-  useEffect(() => {
+  const refreshData = useCallback(() => {
     const u = getCurrentUser();
     if (!u) { router.replace("/login"); return; }
     setUser(u);
@@ -28,15 +28,27 @@ export default function DashboardPage() {
     }
   }, [router]);
 
+  useEffect(() => {
+    refreshData();
+    // Auto-refresh every 30 seconds for live data
+    const interval = setInterval(refreshData, 30000);
+    return () => clearInterval(interval);
+  }, [refreshData]);
+
   if (!user) return null;
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
-      <div>
-        <h2 className="text-2xl font-bold text-gray-800">
-          {t("welcome")}, {user.name}!
-        </h2>
-        <p className="text-gray-500 text-sm mt-1">{t("daily_summary")} — {new Date().toLocaleDateString(lang === "hi" ? "hi-IN" : "en-IN", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-800">
+            {t("welcome")}, {user.name}!
+          </h2>
+          <p className="text-gray-500 text-sm mt-1">{t("daily_summary")} — {new Date().toLocaleDateString(lang === "hi" ? "hi-IN" : "en-IN", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</p>
+        </div>
+        <button onClick={refreshData} className="p-2 hover:bg-gray-100 rounded-xl" title="Refresh">
+          <RefreshCw className="w-5 h-5 text-gray-400" />
+        </button>
       </div>
 
       {/* Employee quick actions */}

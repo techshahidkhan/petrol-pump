@@ -29,12 +29,19 @@ export default function TanksPage() {
     load();
   }, [router]);
 
+  const [refillError, setRefillError] = useState("");
+
   const handleRefill = (tankId: string) => {
     if (!refillQty) return;
-    addRefill(tankId, parseFloat(refillQty));
-    setRefillQty("");
-    setShowRefill(null);
-    load();
+    try {
+      setRefillError("");
+      addRefill(tankId, parseFloat(refillQty));
+      setRefillQty("");
+      setShowRefill(null);
+      load();
+    } catch (err: unknown) {
+      setRefillError(err instanceof Error ? err.message : "Error");
+    }
   };
 
   const handleReading = (tankId: string) => {
@@ -99,11 +106,17 @@ export default function TanksPage() {
 
               {/* Refill form */}
               {showRefill === tank.id && (
-                <div className="flex gap-2">
-                  <input type="number" value={refillQty} onChange={e => setRefillQty(e.target.value)}
-                    placeholder="Liters" className="flex-1 px-3 py-2 border rounded-xl text-sm" inputMode="numeric" />
-                  <button onClick={() => handleRefill(tank.id)}
-                    className="px-4 py-2 bg-blue-500 text-white rounded-xl text-sm font-medium">{t("save")}</button>
+                <div className="space-y-2">
+                  {refillError && (
+                    <div className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">⚠️ {refillError}</div>
+                  )}
+                  <div className="flex gap-2">
+                    <input type="number" value={refillQty} onChange={e => { setRefillQty(e.target.value); setRefillError(""); }}
+                      placeholder="Liters" className="flex-1 px-3 py-2 border rounded-xl text-sm" inputMode="numeric" />
+                    <button onClick={() => handleRefill(tank.id)}
+                      className="px-4 py-2 bg-blue-500 text-white rounded-xl text-sm font-medium">{t("save")}</button>
+                  </div>
+                  <p className="text-xs text-gray-400">{lang === "hi" ? "खाली जगह" : "Available"}: {formatLiters(tank.capacityLiters - tank.currentLevel)}</p>
                 </div>
               )}
 

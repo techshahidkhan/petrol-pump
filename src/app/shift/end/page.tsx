@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Check, AlertTriangle, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, AlertTriangle, Plus, Trash2, Loader2 } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n/useLanguage";
 import {
@@ -30,6 +30,7 @@ export default function EndShiftPage() {
   const [step, setStep] = useState(1);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const { lang, t } = useLanguage();
   const router = useRouter();
 
@@ -48,7 +49,10 @@ export default function EndShiftPage() {
   const pump = nozzle ? getPumpById(nozzle.pumpId) : null;
   const fuel = nozzle ? getFuelTypeById(nozzle.fuelTypeId) : null;
 
-  const totalLiters = closing ? parseFloat(closing) - (shift?.openingReading || 0) : 0;
+  const closingNum = parseFloat(closing);
+  const isClosingValid = closing !== "" && !isNaN(closingNum);
+  const totalLiters = isClosingValid ? closingNum - (shift?.openingReading || 0) : 0;
+  const isReadingError = isClosingValid && closingNum < (shift?.openingReading || 0);
   const expectedAmount = totalLiters * (shift?.fuelRate || fuel?.currentPrice || 0);
   const totalCollected = (parseFloat(cash) || 0) + (parseFloat(upi) || 0) + (parseFloat(card) || 0) + (parseFloat(creditAmount) || 0);
   const discrepancy = expectedAmount - totalCollected;
@@ -65,15 +69,31 @@ export default function EndShiftPage() {
   const removeCreditRow = (idx: number) => {
     const updated = creditRows.filter((_, i) => i !== idx);
     setCreditRows(updated);
-    setCreditAmount(String(updated.reduce((s, r) => s + r.amount, 0)));
+    setCreditAmount(String(updated.reduce((s, r) => s + r.amount, 0) || ""));
+  };
+
+  const handleStep1Next = () => {
+    if (!isClosingValid) {
+      setError(lang === "en" ? "Enter a valid closing reading" : "सही क्लोज़िंग रीडिंग दर्ज करें");
+      return;
+    }
+    if (isReadingError) {
+      setError(lang === "en"
+        ? `Closing reading (${closingNum}) cannot be less than opening (${shift?.openingReading})`
+        : `क्लोज़िंग रीडिंग (${closingNum}) ओपनिंग (${shift?.openingReading}) से कम नहीं हो सकती`);
+      return;
+    }
+    setError("");
+    setStep(2);
   };
 
   const handleConfirm = () => {
-    if (!shift) return;
+    if (!shift || submitting) return;
+    setSubmitting(true);
     try {
       endShift(
         shift.id,
-        parseFloat(closing),
+        closingNum,
         photo,
         {
           cash: parseFloat(cash) || 0,
@@ -87,6 +107,7 @@ export default function EndShiftPage() {
       setTimeout(() => router.push("/dashboard"), 2000);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Error");
+      setSubmitting(false);
     }
   };
 
@@ -117,7 +138,7 @@ export default function EndShiftPage() {
     <div className="max-w-lg mx-auto space-y-6">
       <div className="flex items-center gap-3">
         {step > 1 && (
-          <button onClick={() => setStep(step - 1)} className="p-2 hover:bg-gray-100 rounded-xl">
+          <button onClick={() => { setStep(step - 1); setError(""); }} className="p-2 hover:bg-gray-100 rounded-xl">
             <ArrowLeft className="w-5 h-5" />
           </button>
         )}
@@ -139,7 +160,7 @@ export default function EndShiftPage() {
 
       {error && (
         <div className="flex items-center gap-2 bg-red-50 text-red-700 px-4 py-3 rounded-xl text-sm">
-          <AlertTriangle className="w-4 h-4" /> {error}
+          <AlertTriangle className="w-4 h-4 flex-shrink-0" /> {error}
         </div>
       )}
 
@@ -155,23 +176,43 @@ export default function EndShiftPage() {
             <input
               type="number"
               value={closing}
-              onChange={e => setClosing(e.target.value)}
-              className="w-full px-4 py-4 text-3xl font-bold text-center border-2 border-gray-200 rounded-2xl focus:border-red-400 focus:ring-2 focus:ring-red-100 outline-none"
+              onChange={e => { setClosing(e.target.value); setError(""); }}
+              className={cn(
+                "w-full px-4 py-4 text-3xl font-bold text-center border-2 rounded-2xl focus:ring-2 outline-none",
+                isReadingError
+                  ? "border-red-400 focus:border-red-400 focus:ring-red-100"
+                  : "border-gray-200 focus:border-red-400 focus:ring-red-100"
+              )}
               placeholder="00000.00"
               step="0.01"
               inputMode="decimal"
             />
           </div>
-          {closing && (
-            <div className="bg-blue-50 rounded-xl p-4 space-y-1">
+
+          {/* Reading error warning */}
+          {isReadingError && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-600 font-medium">
+              ⚠️ {lang === "hi"
+                ? `क्लोज़िंग रीडिंग ओपनिंग (${shift.openingReading}) से कम है!`
+                : `Closing reading is less than opening (${shift.openingReading})!`}
+            </div>
+          )}
+
+          {isClosingValid && !isReadingError && (
+            <div className="bg-blue-50 rounded-xl p-4 space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-gray-500">{t("total_liters")}</span>
                 <span className="font-bold text-blue-700">{totalLiters.toFixed(2)} L</span>
               </div>
               <div className="flex justify-between text-sm">
+                <span className="text-gray-500">{t("price_per_liter")}</span>
+                <span className="font-medium text-gray-600">₹{shift.fuelRate}/L</span>
+              </div>
+              <div className="flex justify-between text-sm border-t border-blue-200 pt-2">
                 <span className="text-gray-500">{t("total_amount")}</span>
                 <span className="font-bold text-blue-700">{formatCurrency(expectedAmount)}</span>
               </div>
+              <p className="text-xs text-blue-400 text-right">{totalLiters.toFixed(2)} L × ₹{shift.fuelRate} = {formatCurrency(expectedAmount)}</p>
             </div>
           )}
           <div>
@@ -179,8 +220,8 @@ export default function EndShiftPage() {
             <ImageUpload onUpload={setPhoto} value={photo} />
           </div>
           <button
-            onClick={() => { if (closing) setStep(2); }}
-            disabled={!closing}
+            onClick={handleStep1Next}
+            disabled={!isClosingValid || isReadingError}
             className="w-full py-4 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-300 text-white text-lg font-semibold rounded-xl"
           >
             {t("next")} →
@@ -193,16 +234,16 @@ export default function EndShiftPage() {
         <div className="space-y-5">
           <p className="text-gray-600 font-medium">{t("payment_breakdown")}</p>
           <div className="bg-orange-50 rounded-xl p-4 text-center">
-            <p className="text-sm text-gray-500">{t("total_amount")}</p>
+            <p className="text-sm text-gray-500">{t("total_amount")} ({totalLiters.toFixed(2)}L × ₹{shift.fuelRate})</p>
             <p className="text-3xl font-bold text-orange-600">{formatCurrency(expectedAmount)}</p>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             {[
-              { label: t("cash"), value: cash, set: setCash, color: "green" },
-              { label: t("upi"), value: upi, set: setUpi, color: "purple" },
-              { label: t("card"), value: card, set: setCard, color: "blue" },
-              { label: t("credit"), value: creditAmount, set: setCreditAmount, color: "red", readOnly: creditRows.length > 0 },
+              { label: t("cash"), value: cash, set: setCash },
+              { label: t("upi"), value: upi, set: setUpi },
+              { label: t("card"), value: card, set: setCard },
+              { label: t("credit"), value: creditAmount, set: setCreditAmount, readOnly: creditRows.length > 0 },
             ].map(field => (
               <div key={field.label}>
                 <label className="block text-sm font-medium text-gray-500 mb-1">{field.label}</label>
@@ -250,11 +291,12 @@ export default function EndShiftPage() {
             <p className="text-sm text-gray-500">{t("discrepancy")}</p>
             <p className={cn(
               "text-2xl font-bold",
-              Math.abs(discrepancy) < 10 ? "text-green-600" : "text-red-600"
+              Math.abs(discrepancy) < 10 ? "text-green-600" : discrepancy > 0 ? "text-red-600" : "text-yellow-600"
             )}>
-              {formatCurrency(Math.abs(discrepancy))}
+              {discrepancy > 0 ? "-" : discrepancy < 0 ? "+" : ""}{formatCurrency(Math.abs(discrepancy))}
               {discrepancy > 10 && <span className="text-sm ml-1">({lang === "en" ? "SHORT" : "कमी"})</span>}
               {discrepancy < -10 && <span className="text-sm ml-1">({lang === "en" ? "EXCESS" : "अधिक"})</span>}
+              {Math.abs(discrepancy) < 10 && <span className="text-sm ml-1">✓</span>}
             </p>
           </div>
 
@@ -276,20 +318,28 @@ export default function EndShiftPage() {
               <div className="flex justify-between py-2 border-b"><span className="text-gray-500">{t("opening_reading")}</span><span className="font-medium">{shift.openingReading}</span></div>
               <div className="flex justify-between py-2 border-b"><span className="text-gray-500">{t("closing_reading")}</span><span className="font-bold text-lg">{closing}</span></div>
               <div className="flex justify-between py-2 border-b"><span className="text-gray-500">{t("total_liters")}</span><span className="font-bold">{totalLiters.toFixed(2)} L</span></div>
+              <div className="flex justify-between py-2 border-b"><span className="text-gray-500">{t("price_per_liter")}</span><span className="font-medium">₹{shift.fuelRate}/L</span></div>
               <div className="flex justify-between py-2 border-b"><span className="text-gray-500">{t("total_amount")}</span><span className="font-bold">{formatCurrency(expectedAmount)}</span></div>
+              <div className="flex justify-between py-2 border-b"><span className="text-gray-500">{t("cash")}</span><span>{formatCurrency(parseFloat(cash) || 0)}</span></div>
+              <div className="flex justify-between py-2 border-b"><span className="text-gray-500">{t("upi")}</span><span>{formatCurrency(parseFloat(upi) || 0)}</span></div>
+              <div className="flex justify-between py-2 border-b"><span className="text-gray-500">{t("card")}</span><span>{formatCurrency(parseFloat(card) || 0)}</span></div>
+              <div className="flex justify-between py-2 border-b"><span className="text-gray-500">{t("credit")}</span><span>{formatCurrency(parseFloat(creditAmount) || 0)}</span></div>
               <div className="flex justify-between py-2 border-b"><span className="text-gray-500">{t("total_collected")}</span><span className="font-bold">{formatCurrency(totalCollected)}</span></div>
-              <div className={cn("flex justify-between py-2", Math.abs(discrepancy) > 10 && "text-red-600")}>
-                <span className="text-gray-500">{t("discrepancy")}</span>
-                <span className="font-bold">{formatCurrency(discrepancy)}</span>
+              <div className={cn("flex justify-between py-2 font-bold",
+                Math.abs(discrepancy) < 10 ? "text-green-600" : discrepancy > 0 ? "text-red-600" : "text-yellow-600"
+              )}>
+                <span>{t("discrepancy")}</span>
+                <span>{discrepancy > 0 ? "-" : discrepancy < 0 ? "+" : ""}{formatCurrency(Math.abs(discrepancy))}</span>
               </div>
             </div>
           </div>
 
           <button
             onClick={handleConfirm}
-            className="w-full py-4 bg-red-500 hover:bg-red-600 text-white text-lg font-semibold rounded-xl shadow-lg"
+            disabled={submitting}
+            className="w-full py-4 bg-red-500 hover:bg-red-600 disabled:bg-gray-400 text-white text-lg font-semibold rounded-xl shadow-lg flex items-center justify-center gap-2"
           >
-            ✓ {t("confirm")} {t("end_shift")}
+            {submitting ? <><Loader2 className="w-5 h-5 animate-spin" /> {lang === "hi" ? "सबमिट हो रहा है..." : "Submitting..."}</> : <>✓ {t("confirm")} {t("end_shift")}</>}
           </button>
         </div>
       )}

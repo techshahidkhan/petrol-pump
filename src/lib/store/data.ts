@@ -171,6 +171,11 @@ export function endShift(
   if (idx === -1) throw new Error("Shift not found");
 
   const shift = store.shifts[idx];
+  if (shift.status === "completed") throw new Error("Shift already ended");
+
+  // Prevent duplicate payments
+  const existingPayment = store.payments.find(p => p.shiftId === shiftId);
+  if (existingPayment) throw new Error("Payment already recorded for this shift");
   shift.closingReading = closingReading;
   shift.totalLiters = closingReading - shift.openingReading;
   shift.totalAmount = shift.totalLiters * shift.fuelRate;
@@ -244,7 +249,12 @@ export function addRefill(tankId: string, quantity: number): void {
   const store = getStore();
   const idx = store.tanks.findIndex(t => t.id === tankId);
   if (idx !== -1) {
-    store.tanks[idx].currentLevel += quantity;
+    const tank = store.tanks[idx];
+    const newLevel = tank.currentLevel + quantity;
+    if (newLevel > tank.capacityLiters) {
+      throw new Error(`Overflow: ${newLevel.toFixed(0)}L exceeds capacity ${tank.capacityLiters}L`);
+    }
+    store.tanks[idx].currentLevel = newLevel;
     saveStore(store);
   }
 }

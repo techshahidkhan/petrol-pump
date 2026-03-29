@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Check, AlertTriangle, Fuel } from "lucide-react";
+import { ArrowLeft, Check, AlertTriangle, Fuel, Loader2 } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n/useLanguage";
 import {
@@ -23,6 +23,7 @@ export default function StartShiftPage() {
   const [photo, setPhoto] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const { lang, t } = useLanguage();
   const router = useRouter();
 
@@ -66,13 +67,15 @@ export default function StartShiftPage() {
 
   const handleConfirm = () => {
     const user = getCurrentUser();
-    if (!user || !selectedNozzle) return;
+    if (!user || !selectedNozzle || submitting) return;
+    setSubmitting(true);
     try {
       startShift(user.id, selectedNozzle.id, parseFloat(reading), photo);
       setSuccess(true);
       setTimeout(() => router.push("/dashboard"), 1500);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Error starting shift");
+      setSubmitting(false);
     }
   };
 
@@ -269,9 +272,10 @@ export default function StartShiftPage() {
 
           <button
             onClick={handleConfirm}
-            className="w-full py-4 bg-green-500 hover:bg-green-600 text-white text-lg font-semibold rounded-xl transition-colors shadow-lg"
+            disabled={submitting}
+            className="w-full py-4 bg-green-500 hover:bg-green-600 disabled:bg-gray-400 text-white text-lg font-semibold rounded-xl transition-colors shadow-lg flex items-center justify-center gap-2"
           >
-            ✓ {t("confirm")} {t("start_shift")}
+            {submitting ? <><Loader2 className="w-5 h-5 animate-spin" /> {lang === "hi" ? "शुरू हो रही है..." : "Starting..."}</> : <>✓ {t("confirm")} {t("start_shift")}</>}
           </button>
         </div>
       )}

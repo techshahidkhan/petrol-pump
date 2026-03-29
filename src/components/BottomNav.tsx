@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Play, Square, List, FileSpreadsheet } from "lucide-react";
+import { LayoutDashboard, Play, Square, List, FileSpreadsheet, BarChart3 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n/useLanguage";
 import { getCurrentUser } from "@/lib/store/data";
@@ -18,7 +18,7 @@ const adminNav = [
   { href: "/dashboard", icon: LayoutDashboard, label: "dashboard" },
   { href: "/collections", icon: FileSpreadsheet, label: "daily_summary" },
   { href: "/shifts", icon: List, label: "shifts" },
-  { href: "/reports", icon: List, label: "reports" },
+  { href: "/reports", icon: BarChart3, label: "reports" },
 ];
 
 export default function BottomNav() {
