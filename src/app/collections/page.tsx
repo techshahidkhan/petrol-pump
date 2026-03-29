@@ -1,15 +1,15 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Calendar, Banknote, ArrowLeft, Fuel, Save, Check } from "lucide-react";
+import { Calendar, Banknote, ArrowLeft, Fuel, Save, Check, Trash2, Plus, Wallet, Zap, Wrench, Users } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n/useLanguage";
 import {
   getCurrentUser, recalcDailyCollection, saveDailyCollection, getDailyCollection,
   getStore, updateFuelPrice, getEmployeeById, getNozzleById, getPumpById,
-  getFuelTypeById, getPaymentForShift
+  getFuelTypeById, getPaymentForShift, addExpense, deleteExpense, getExpensesForDate
 } from "@/lib/store/data";
-import type { DailyCollection, Shift, FuelType } from "@/lib/store/types";
+import type { DailyCollection, Shift, FuelType, Expense } from "@/lib/store/types";
 import Link from "next/link";
 
 interface ShiftRow {
@@ -22,10 +22,23 @@ interface ShiftRow {
   openReading: number;
   closeReading: number;
   liters: number;
+  testingQty: number;
+  salesLiters: number;
   amount: number;
   collected: number;
   diff: number;
   time: string;
+}
+
+const EXPENSE_CATEGORIES: { value: Expense["category"]; labelHi: string; labelEn: string; icon: typeof Wallet }[] = [
+  { value: "salary", labelHi: "वेतन", labelEn: "Salary", icon: Users },
+  { value: "maintenance", labelHi: "रखरखाव", labelEn: "Maintenance", icon: Wrench },
+  { value: "electricity", labelHi: "बिजली", labelEn: "Electricity", icon: Zap },
+  { value: "other", labelHi: "अन्य", labelEn: "Other", icon: Wallet },
+];
+
+function getCategoryInfo(category: Expense["category"]) {
+  return EXPENSE_CATEGORIES.find(c => c.value === category) || EXPENSE_CATEGORIES[3];
 }
 
 export default function CollectionsPage() {
@@ -38,6 +51,10 @@ export default function CollectionsPage() {
   const [prices, setPrices] = useState<Record<string, string>>({});
   const [priceSaved, setPriceSaved] = useState(false);
   const [shiftRows, setShiftRows] = useState<ShiftRow[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [expCategory, setExpCategory] = useState<Expense["category"]>("other");
+  const [expDescription, setExpDescription] = useState("");
+  const [expAmount, setExpAmount] = useState("");
   const { lang, t } = useLanguage();
   const router = useRouter();
 
@@ -63,6 +80,9 @@ export default function CollectionsPage() {
     setRemarks(existing?.remarks || "");
     setSaved(false);
 
+    // Load expenses
+    setExpenses(getExpensesForDate(date));
+
     // Load shift rows for selected date
     const dayShifts = store.shifts.filter(
       (s: Shift) => s.startedAt.startsWith(date) && s.status === "completed"
@@ -74,7 +94,9 @@ export default function CollectionsPage() {
       const fuel = nozzle ? getFuelTypeById(nozzle.fuelTypeId) : null;
       const payment = getPaymentForShift(shift.id);
       const liters = shift.totalLiters || 0;
-      const amount = shift.totalAmount || (liters * shift.fuelRate);
+      const testingQty = shift.testingQuantity || 0;
+      const salesLiters = liters - testingQty;
+      const amount = shift.totalAmount || (salesLiters * shift.fuelRate);
       const collected = payment?.totalCollected || 0;
       return {
         id: shift.id,
@@ -86,6 +108,8 @@ export default function CollectionsPage() {
         openReading: shift.openingReading,
         closeReading: shift.closingReading || 0,
         liters,
+        testingQty,
+        salesLiters,
         amount,
         collected,
         diff: amount - collected,
@@ -111,11 +135,31 @@ export default function CollectionsPage() {
     setTimeout(() => setSaved(false), 2000);
   };
 
+  const handleAddExpense = () => {
+    const amt = parseFloat(expAmount);
+    if (!expDescription.trim() || !amt || amt <= 0) return;
+    addExpense(date, expCategory, expDescription.trim(), amt);
+    setExpDescription("");
+    setExpAmount("");
+    setExpCategory("other");
+    // Reload to refresh totals
+    loadAll();
+  };
+
+  const handleDeleteExpense = (id: string) => {
+    deleteExpense(id);
+    loadAll();
+  };
+
   if (!collection) return null;
 
   const totalLiters = shiftRows.reduce((s, r) => s + r.liters, 0);
+  const totalTestingQty = shiftRows.reduce((s, r) => s + r.testingQty, 0);
+  const totalSalesLiters = shiftRows.reduce((s, r) => s + r.salesLiters, 0);
   const totalAmount = shiftRows.reduce((s, r) => s + r.amount, 0);
   const totalCollected = shiftRows.reduce((s, r) => s + r.collected, 0);
+  const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0);
+  const cashInHand = collection.previousCashBalance + collection.totalCash - (parseFloat(bankDeposit) || 0) - totalExpenses;
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 pb-8">
@@ -192,6 +236,8 @@ export default function CollectionsPage() {
                   <th className="px-3 py-2 text-right text-gray-500 font-medium">{lang === "hi" ? "ओपन" : "Open"}</th>
                   <th className="px-3 py-2 text-right text-gray-500 font-medium">{lang === "hi" ? "क्लोज" : "Close"}</th>
                   <th className="px-3 py-2 text-right text-gray-500 font-medium">{lang === "hi" ? "लीटर" : "Liters"}</th>
+                  <th className="px-3 py-2 text-right text-gray-500 font-medium">{lang === "hi" ? "टेस्ट" : "Test"}</th>
+                  <th className="px-3 py-2 text-right text-gray-500 font-medium">{lang === "hi" ? "बिक्री ली." : "Sales L"}</th>
                   <th className="px-3 py-2 text-right text-gray-500 font-medium">{lang === "hi" ? "राशि" : "Amount"}</th>
                   <th className="px-3 py-2 text-right text-gray-500 font-medium">{lang === "hi" ? "वसूली" : "Collected"}</th>
                 </tr>
@@ -215,7 +261,9 @@ export default function CollectionsPage() {
                     <td className="px-3 py-2.5 text-right font-medium text-gray-600">₹{row.rate}</td>
                     <td className="px-3 py-2.5 text-right text-gray-500">{row.openReading}</td>
                     <td className="px-3 py-2.5 text-right text-gray-500">{row.closeReading}</td>
-                    <td className="px-3 py-2.5 text-right font-bold text-blue-600">{row.liters.toFixed(2)}</td>
+                    <td className="px-3 py-2.5 text-right text-gray-500">{row.liters.toFixed(2)}</td>
+                    <td className="px-3 py-2.5 text-right text-gray-400">{row.testingQty > 0 ? row.testingQty.toFixed(2) : "-"}</td>
+                    <td className="px-3 py-2.5 text-right font-bold text-blue-600">{row.salesLiters.toFixed(2)}</td>
                     <td className="px-3 py-2.5 text-right font-bold text-orange-600">{formatCurrency(row.amount)}</td>
                     <td className="px-3 py-2.5 text-right">
                       <span className={cn("font-bold", Math.abs(row.diff) > 10 ? "text-red-600" : "text-green-600")}>
@@ -228,7 +276,9 @@ export default function CollectionsPage() {
               <tfoot className="bg-orange-50 border-t-2 border-orange-200">
                 <tr>
                   <td colSpan={6} className="px-3 py-2.5 font-bold text-gray-700">{lang === "hi" ? "कुल" : "TOTAL"}</td>
-                  <td className="px-3 py-2.5 text-right font-bold text-blue-700">{totalLiters.toFixed(2)} L</td>
+                  <td className="px-3 py-2.5 text-right font-bold text-gray-500">{totalLiters.toFixed(2)}</td>
+                  <td className="px-3 py-2.5 text-right font-bold text-gray-400">{totalTestingQty.toFixed(2)}</td>
+                  <td className="px-3 py-2.5 text-right font-bold text-blue-700">{totalSalesLiters.toFixed(2)} L</td>
                   <td className="px-3 py-2.5 text-right font-bold text-orange-700">{formatCurrency(totalAmount)}</td>
                   <td className="px-3 py-2.5 text-right font-bold text-green-700">{formatCurrency(totalCollected)}</td>
                 </tr>
@@ -284,6 +334,94 @@ export default function CollectionsPage() {
         </div>
       </div>
 
+      {/* ===== EXPENSE TRACKING ===== */}
+      <div className="bg-white rounded-2xl border p-4 space-y-4">
+        <h3 className="font-semibold text-gray-700 flex items-center gap-2">
+          <Wallet className="w-5 h-5 text-red-500" />
+          {lang === "hi" ? "खर्चे" : "Expenses"}
+        </h3>
+
+        {/* Expense list */}
+        {expenses.length > 0 ? (
+          <div className="space-y-2">
+            {expenses.map(exp => {
+              const catInfo = getCategoryInfo(exp.category);
+              const CatIcon = catInfo.icon;
+              return (
+                <div key={exp.id} className="flex items-center gap-3 bg-gray-50 rounded-xl px-3 py-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center">
+                    <CatIcon className="w-4 h-4 text-red-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-700 truncate">{exp.description}</p>
+                    <p className="text-[10px] text-gray-400">{lang === "hi" ? catInfo.labelHi : catInfo.labelEn}</p>
+                  </div>
+                  <p className="text-sm font-bold text-red-600 shrink-0">{formatCurrency(exp.amount)}</p>
+                  <button
+                    onClick={() => handleDeleteExpense(exp.id)}
+                    className="p-1.5 hover:bg-red-100 rounded-lg transition-colors shrink-0"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-400 text-center py-2">
+            {lang === "hi" ? "आज कोई खर्चा नहीं" : "No expenses for this date"}
+          </p>
+        )}
+
+        {/* Total expenses */}
+        {expenses.length > 0 && (
+          <div className="flex items-center justify-between bg-red-50 rounded-xl px-4 py-2.5">
+            <p className="text-sm font-medium text-gray-600">{lang === "hi" ? "कुल खर्चा" : "Total Expenses"}</p>
+            <p className="text-lg font-bold text-red-600">{formatCurrency(totalExpenses)}</p>
+          </div>
+        )}
+
+        {/* Add expense form */}
+        <div className="border-t pt-3 space-y-3">
+          <p className="text-xs font-medium text-gray-500">{lang === "hi" ? "नया खर्चा जोड़ें" : "Add Expense"}</p>
+          <div className="grid grid-cols-2 gap-2">
+            <select
+              value={expCategory}
+              onChange={e => setExpCategory(e.target.value as Expense["category"])}
+              className="px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:border-orange-400 outline-none"
+            >
+              {EXPENSE_CATEGORIES.map(cat => (
+                <option key={cat.value} value={cat.value}>
+                  {lang === "hi" ? cat.labelHi : cat.labelEn}
+                </option>
+              ))}
+            </select>
+            <input
+              type="number"
+              value={expAmount}
+              onChange={e => setExpAmount(e.target.value)}
+              placeholder={lang === "hi" ? "राशि" : "Amount"}
+              className="px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:border-orange-400 outline-none"
+              inputMode="numeric"
+            />
+          </div>
+          <input
+            type="text"
+            value={expDescription}
+            onChange={e => setExpDescription(e.target.value)}
+            placeholder={lang === "hi" ? "विवरण..." : "Description..."}
+            className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:border-orange-400 outline-none"
+          />
+          <button
+            onClick={handleAddExpense}
+            className="w-full py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-xl text-sm font-medium flex items-center justify-center gap-2 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            {lang === "hi" ? "खर्चा जोड़ें" : "Add Expense"}
+          </button>
+        </div>
+      </div>
+
       {/* ===== CASH & BANK TRACKING ===== */}
       <div className="bg-white rounded-2xl border p-4 space-y-4">
         <h3 className="font-semibold text-gray-700">{lang === "hi" ? "नकद और बैंक" : "Cash & Bank"}</h3>
@@ -321,17 +459,25 @@ export default function CollectionsPage() {
           </div>
         )}
 
+        {/* Total Expenses summary */}
+        <div className="bg-red-50 rounded-xl p-3">
+          <p className="text-gray-400 text-xs">{lang === "hi" ? "कुल खर्चा" : "Total Expenses"}</p>
+          <p className="font-bold text-red-600">{formatCurrency(totalExpenses)}</p>
+        </div>
+
         {/* Cash In Hand (auto) */}
         <div className={cn("rounded-xl p-4 text-center",
-          (collection.previousCashBalance + collection.totalCash - (parseFloat(bankDeposit) || 0)) < 0
-            ? "bg-red-50" : "bg-orange-50"
+          cashInHand < 0 ? "bg-red-50" : "bg-orange-50"
         )}>
           <p className="text-sm text-gray-500">{t("cash_balance")}</p>
           <p className="text-2xl font-bold text-orange-600">
-            {formatCurrency(collection.previousCashBalance + collection.totalCash - (parseFloat(bankDeposit) || 0))}
+            {formatCurrency(cashInHand)}
           </p>
           <p className="text-xs text-gray-400 mt-1">
-            = {formatCurrency(collection.previousCashBalance)} + {formatCurrency(collection.totalCash)} - {formatCurrency(parseFloat(bankDeposit) || 0)}
+            = {formatCurrency(collection.previousCashBalance)} + {formatCurrency(collection.totalCash)} - {formatCurrency(parseFloat(bankDeposit) || 0)} - {formatCurrency(totalExpenses)}
+          </p>
+          <p className="text-[10px] text-gray-300 mt-0.5">
+            ({lang === "hi" ? "पिछला बैलेंस + आज नकद - बैंक जमा - खर्चे" : "Prev Balance + Today Cash - Bank Deposit - Expenses"})
           </p>
         </div>
 

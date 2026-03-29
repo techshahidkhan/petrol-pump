@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Check, AlertTriangle, Fuel, Loader2 } from "lucide-react";
+import { ArrowLeft, Check, AlertTriangle, Fuel, Loader2, Lock } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n/useLanguage";
 import {
@@ -30,11 +30,8 @@ export default function StartShiftPage() {
   useEffect(() => {
     const user = getCurrentUser();
     if (!user) { router.replace("/login"); return; }
-    // Check if employee already has active shift
-    const activeShift = getActiveShiftForEmployee(user.id);
-    if (activeShift) {
-      setError(lang === "en" ? "You already have an active shift. End it first." : "आपकी पहले से एक शिफ्ट चल रही है। पहले उसे समाप्त करें।");
-    }
+    // Multi-shift: no longer block if employee already has an active shift.
+    // Employees can run multiple nozzles simultaneously.
     const store = getStore();
     setPumps(store.pumps.filter(p => p.status === "active"));
   }, [router, lang]);
@@ -61,6 +58,8 @@ export default function StartShiftPage() {
     setLastReading(prevReading);
     if (prevReading !== null) {
       setReading(String(prevReading));
+    } else {
+      setReading("");
     }
     setStep(3);
   };
@@ -89,6 +88,8 @@ export default function StartShiftPage() {
       </div>
     );
   }
+
+  const isReadingLocked = lastReading !== null;
 
   return (
     <div className="max-w-lg mx-auto space-y-6">
@@ -168,7 +169,10 @@ export default function StartShiftPage() {
                       {t("nozzle")} {nozzle.nozzleNumber}
                     </p>
                     <p className="text-sm text-gray-500">
-                      {lang === "hi" ? fuel?.nameHi : fuel?.name} — {formatCurrency(fuel?.currentPrice || 0)}/L
+                      {lang === "hi" ? fuel?.nameHi : fuel?.name}
+                    </p>
+                    <p className="text-sm font-semibold text-orange-600">
+                      {formatCurrency(fuel?.currentPrice || 0)}/L
                     </p>
                     {active && (
                       <p className="text-xs text-red-500 mt-1 font-medium">
@@ -189,43 +193,55 @@ export default function StartShiftPage() {
         <div className="space-y-6">
           <p className="text-gray-600 font-medium">{t("enter_reading")}</p>
 
-          {/* Previous closing reading hint */}
-          {lastReading !== null && (
+          {/* Previous closing reading hint (locked) */}
+          {isReadingLocked && (
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center justify-between">
               <div>
                 <p className="text-xs text-blue-500 font-medium">{lang === "hi" ? "पिछली क्लोज़िंग रीडिंग" : "Previous Closing Reading"}</p>
                 <p className="text-lg font-bold text-blue-700">{lastReading}</p>
               </div>
-              <span className="text-xs text-blue-400">{lang === "hi" ? "ऑटो-भरा" : "Auto-filled"} ✓</span>
+              <div className="flex items-center gap-1 text-xs text-blue-400">
+                <Lock className="w-3 h-3" />
+                {lang === "hi" ? "लॉक किया गया" : "Locked"}
+              </div>
             </div>
           )}
 
           <div>
             <label className="block text-sm font-medium text-gray-500 mb-2">{t("opening_reading")}</label>
-            <input
-              type="number"
-              value={reading}
-              onChange={e => setReading(e.target.value)}
-              className="w-full px-4 py-4 text-3xl font-bold text-center border-2 border-gray-200 rounded-2xl focus:border-orange-400 focus:ring-2 focus:ring-orange-100 outline-none"
-              placeholder="00000.00"
-              step="0.01"
-              inputMode="decimal"
-            />
+            <div className="relative">
+              <input
+                type="number"
+                value={reading}
+                onChange={e => { if (!isReadingLocked) setReading(e.target.value); }}
+                readOnly={isReadingLocked}
+                className={cn(
+                  "w-full px-4 py-4 text-3xl font-bold text-center border-2 rounded-2xl outline-none",
+                  isReadingLocked
+                    ? "border-gray-200 bg-gray-100 text-gray-500 cursor-not-allowed"
+                    : "border-gray-200 focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                )}
+                placeholder="00000.00"
+                step="0.01"
+                inputMode="decimal"
+              />
+              {isReadingLocked && (
+                <Lock className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              )}
+            </div>
+            {isReadingLocked && (
+              <p className="text-xs text-gray-400 mt-1">
+                {lang === "hi"
+                  ? "पिछली क्लोज़िंग रीडिंग से ऑटो-सेट। बदला नहीं जा सकता।"
+                  : "Auto-set from previous closing reading. Cannot be changed."}
+              </p>
+            )}
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-500 mb-2">{t("upload_photo")}</label>
             <ImageUpload onUpload={setPhoto} value={photo} />
           </div>
-
-          {/* Warning if reading is less than previous closing */}
-          {lastReading !== null && reading && parseFloat(reading) < lastReading && (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-600 font-medium">
-              ⚠️ {lang === "hi"
-                ? `रीडिंग पिछली क्लोज़िंग (${lastReading}) से कम है!`
-                : `Reading is less than previous closing (${lastReading})!`}
-            </div>
-          )}
 
           <button
             onClick={() => { if (reading) setStep(4); else setError(lang === "en" ? "Enter reading" : "रीडिंग दर्ज करें"); }}
@@ -257,11 +273,14 @@ export default function StartShiftPage() {
               </div>
               <div className="flex justify-between py-2 border-b">
                 <span className="text-gray-500">{t("price_per_liter")}</span>
-                <span className="font-bold text-orange-600">₹{getFuelTypeById(selectedNozzle?.fuelTypeId || "")?.currentPrice || 0}/L</span>
+                <span className="font-bold text-orange-600">{formatCurrency(getFuelTypeById(selectedNozzle?.fuelTypeId || "")?.currentPrice || 0)}/L</span>
               </div>
               <div className="flex justify-between py-2 border-b">
                 <span className="text-gray-500">{t("opening_reading")}</span>
-                <span className="font-bold text-lg">{reading}</span>
+                <span className="font-bold text-lg flex items-center gap-1">
+                  {reading}
+                  {isReadingLocked && <Lock className="w-3 h-3 text-gray-400" />}
+                </span>
               </div>
               <div className="flex justify-between py-2">
                 <span className="text-gray-500">{t("upload_photo")}</span>

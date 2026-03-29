@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Play, Square, List, Droplets, BarChart3,
-  Users, CreditCard, Settings, Menu, X, Fuel, FileSpreadsheet
+  Users, CreditCard, Settings, Menu, X, Fuel, FileSpreadsheet, Gauge
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n/useLanguage";
@@ -16,6 +16,7 @@ const allNavItems = [
   { href: "/collections", icon: FileSpreadsheet, label: "daily_summary", roles: ["admin"] },
   { href: "/shift/start", icon: Play, label: "start_shift", roles: ["admin", "employee"] },
   { href: "/shift/end", icon: Square, label: "end_shift", roles: ["admin", "employee"] },
+  { href: "/nozzles", icon: Gauge, label: "nozzle_readings", roles: ["admin"] },
   { href: "/shifts", icon: List, label: "shifts", roles: ["admin"] },
   { href: "/tanks", icon: Droplets, label: "tanks", roles: ["admin"] },
   { href: "/reports", icon: BarChart3, label: "reports", roles: ["admin"] },

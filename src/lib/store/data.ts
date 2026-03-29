@@ -1,7 +1,7 @@
 import { generateId } from "../utils";
 import type {
   Employee, FuelType, Pump, Nozzle, Shift, Payment, Tank, TankReading, CreditEntry,
-  DailyCollection, PriceChange
+  DailyCollection, PriceChange, Expense
 } from "./types";
 
 const STORAGE_KEY = "petrol_pump_data";
@@ -18,6 +18,7 @@ export interface StoreData {
   creditEntries: CreditEntry[];
   dailyCollections: DailyCollection[];
   priceChanges: PriceChange[];
+  expenses: Expense[];
   initialized: boolean;
 }
 
@@ -52,14 +53,14 @@ function getDefaultData(): StoreData {
       { id: pump4Id, pumpNumber: 4, locationLabel: "Back Right", status: "active" },
     ],
     nozzles: [
-      { id: generateId(), pumpId: pump1Id, nozzleNumber: 1, fuelTypeId: petrolId, status: "active" },
-      { id: generateId(), pumpId: pump1Id, nozzleNumber: 2, fuelTypeId: dieselId, status: "active" },
-      { id: generateId(), pumpId: pump2Id, nozzleNumber: 1, fuelTypeId: petrolId, status: "active" },
-      { id: generateId(), pumpId: pump2Id, nozzleNumber: 2, fuelTypeId: dieselId, status: "active" },
-      { id: generateId(), pumpId: pump3Id, nozzleNumber: 1, fuelTypeId: petrolId, status: "active" },
-      { id: generateId(), pumpId: pump3Id, nozzleNumber: 2, fuelTypeId: dieselId, status: "active" },
-      { id: generateId(), pumpId: pump4Id, nozzleNumber: 1, fuelTypeId: petrolId, status: "active" },
-      { id: generateId(), pumpId: pump4Id, nozzleNumber: 2, fuelTypeId: dieselId, status: "active" },
+      { id: generateId(), pumpId: pump1Id, nozzleNumber: 1, fuelTypeId: petrolId, status: "active", initialReading: 0 },
+      { id: generateId(), pumpId: pump1Id, nozzleNumber: 2, fuelTypeId: dieselId, status: "active", initialReading: 0 },
+      { id: generateId(), pumpId: pump2Id, nozzleNumber: 1, fuelTypeId: petrolId, status: "active", initialReading: 0 },
+      { id: generateId(), pumpId: pump2Id, nozzleNumber: 2, fuelTypeId: dieselId, status: "active", initialReading: 0 },
+      { id: generateId(), pumpId: pump3Id, nozzleNumber: 1, fuelTypeId: petrolId, status: "active", initialReading: 0 },
+      { id: generateId(), pumpId: pump3Id, nozzleNumber: 2, fuelTypeId: dieselId, status: "active", initialReading: 0 },
+      { id: generateId(), pumpId: pump4Id, nozzleNumber: 1, fuelTypeId: petrolId, status: "active", initialReading: 0 },
+      { id: generateId(), pumpId: pump4Id, nozzleNumber: 2, fuelTypeId: dieselId, status: "active", initialReading: 0 },
     ],
     shifts: [],
     payments: [],
@@ -71,6 +72,7 @@ function getDefaultData(): StoreData {
     creditEntries: [],
     dailyCollections: [],
     priceChanges: [],
+    expenses: [],
   };
 }
 
@@ -82,18 +84,41 @@ export function getStore(): StoreData {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     return data;
   }
-  const parsed = JSON.parse(raw);
-  // Migrate older stored data
-  if (!parsed.dailyCollections) parsed.dailyCollections = [];
-  if (!parsed.priceChanges) parsed.priceChanges = [];
-  // Add fuelRate/totalAmount to old shifts that don't have them
-  if (parsed.shifts) {
-    for (const s of parsed.shifts) {
-      if (s.fuelRate === undefined) s.fuelRate = 0;
-      if (s.totalAmount === undefined) s.totalAmount = null;
+  try {
+    const parsed = JSON.parse(raw);
+    // Migrate older stored data
+    if (!parsed.dailyCollections) parsed.dailyCollections = [];
+    if (!parsed.priceChanges) parsed.priceChanges = [];
+    if (!parsed.expenses) parsed.expenses = [];
+    // Migrate shifts
+    if (parsed.shifts) {
+      for (const s of parsed.shifts) {
+        if (s.fuelRate === undefined) s.fuelRate = 0;
+        if (s.totalAmount === undefined) s.totalAmount = null;
+        if (s.testingQuantity === undefined) s.testingQuantity = 0;
+        if (s.remarks === undefined) s.remarks = "";
+      }
     }
+    // Migrate nozzles
+    if (parsed.nozzles) {
+      for (const n of parsed.nozzles) {
+        if (n.initialReading === undefined) n.initialReading = 0;
+      }
+    }
+    // Migrate daily collections
+    if (parsed.dailyCollections) {
+      for (const dc of parsed.dailyCollections) {
+        if (dc.totalTestingLiters === undefined) dc.totalTestingLiters = 0;
+        if (dc.totalExpenses === undefined) dc.totalExpenses = 0;
+      }
+    }
+    return parsed;
+  } catch {
+    // If localStorage is corrupted, reset to defaults
+    const data = getDefaultData();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    return data;
   }
-  return parsed;
 }
 
 export function saveStore(data: StoreData): void {
@@ -128,11 +153,73 @@ export function setCurrentUser(emp: Employee | null): void {
   }
 }
 
-// Shifts
+// ===== NOZZLE READING CHAIN =====
+
+// Get the current reading for a nozzle (last closing or initial)
+export function getLastClosingReading(nozzleId: string): number | null {
+  const store = getStore();
+  const completed = store.shifts
+    .filter(s => s.nozzleId === nozzleId && s.status === "completed" && s.closingReading !== null)
+    .sort((a, b) => new Date(b.endedAt!).getTime() - new Date(a.endedAt!).getTime());
+  if (completed.length > 0) return completed[0].closingReading;
+  // Fall back to nozzle initial reading
+  const nozzle = store.nozzles.find(n => n.id === nozzleId);
+  return nozzle?.initialReading ?? null;
+}
+
+// Get full reading chain for a nozzle (chronological)
+export function getNozzleReadingChain(nozzleId: string): { shifts: Shift[]; isChainValid: boolean } {
+  const store = getStore();
+  const nozzle = store.nozzles.find(n => n.id === nozzleId);
+  const shifts = store.shifts
+    .filter(s => s.nozzleId === nozzleId)
+    .sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
+
+  let isChainValid = true;
+  let expectedOpening = nozzle?.initialReading ?? 0;
+  for (const shift of shifts) {
+    if (shift.openingReading !== expectedOpening) {
+      isChainValid = false;
+    }
+    if (shift.closingReading !== null) {
+      expectedOpening = shift.closingReading;
+    }
+  }
+  return { shifts, isChainValid };
+}
+
+// Get all nozzles with their current status
+export function getAllNozzlesWithStatus() {
+  const store = getStore();
+  return store.nozzles.map(n => {
+    const activeShift = store.shifts.find(s => s.nozzleId === n.id && s.status === "active");
+    const lastClosing = getLastClosingReading(n.id);
+    const pump = store.pumps.find(p => p.id === n.pumpId);
+    const fuel = store.fuelTypes.find(f => f.id === n.fuelTypeId);
+    const employee = activeShift ? store.employees.find(e => e.id === activeShift.employeeId) : null;
+    return {
+      ...n,
+      pump,
+      fuel,
+      currentReading: lastClosing ?? n.initialReading,
+      activeShift,
+      activeEmployee: employee,
+    };
+  });
+}
+
+// ===== SHIFTS =====
+
 export function startShift(employeeId: string, nozzleId: string, openingReading: number, photoUrl: string | null): Shift {
   const store = getStore();
   const existing = store.shifts.find(s => s.nozzleId === nozzleId && s.status === "active");
   if (existing) throw new Error("Nozzle already has an active shift");
+
+  // Enforce reading chain: opening must equal last closing
+  const lastClosing = getLastClosingReading(nozzleId);
+  if (lastClosing !== null && openingReading !== lastClosing) {
+    throw new Error(`Opening reading must be ${lastClosing} (previous closing)`);
+  }
 
   // Get current fuel rate for this nozzle
   const nozzle = store.nozzles.find(n => n.id === nozzleId);
@@ -146,11 +233,13 @@ export function startShift(employeeId: string, nozzleId: string, openingReading:
     openingReading,
     closingReading: null,
     totalLiters: null,
+    testingQuantity: 0,
     fuelRate,
     totalAmount: null,
     openingPhotoUrl: photoUrl,
     closingPhotoUrl: null,
     status: "active",
+    remarks: "",
     startedAt: new Date().toISOString(),
     endedAt: null,
   };
@@ -164,6 +253,8 @@ export function endShift(
   closingReading: number,
   closingPhotoUrl: string | null,
   payment: { cash: number; upi: number; card: number; credit: number },
+  testingQuantity: number = 0,
+  remarks: string = "",
   creditEntries?: { customerName: string; vehicleNumber: string; amount: number }[]
 ): { shift: Shift; payment: Payment } {
   const store = getStore();
@@ -176,10 +267,18 @@ export function endShift(
   // Prevent duplicate payments
   const existingPayment = store.payments.find(p => p.shiftId === shiftId);
   if (existingPayment) throw new Error("Payment already recorded for this shift");
+
+  // Validate closing >= opening
+  if (closingReading < shift.openingReading) {
+    throw new Error("Closing reading cannot be less than opening reading");
+  }
+
   shift.closingReading = closingReading;
   shift.totalLiters = closingReading - shift.openingReading;
-  shift.totalAmount = shift.totalLiters * shift.fuelRate;
+  shift.testingQuantity = testingQuantity;
+  shift.totalAmount = (shift.totalLiters - testingQuantity) * shift.fuelRate;
   shift.closingPhotoUrl = closingPhotoUrl;
+  shift.remarks = remarks;
   shift.status = "completed";
   shift.endedAt = new Date().toISOString();
   store.shifts[idx] = shift;
@@ -218,12 +317,18 @@ export function getActiveShiftForEmployee(employeeId: string): Shift | null {
   return store.shifts.find(s => s.employeeId === employeeId && s.status === "active") || null;
 }
 
+export function getActiveShiftsForEmployee(employeeId: string): Shift[] {
+  const store = getStore();
+  return store.shifts.filter(s => s.employeeId === employeeId && s.status === "active");
+}
+
 export function getActiveShiftForNozzle(nozzleId: string): Shift | null {
   const store = getStore();
   return store.shifts.find(s => s.nozzleId === nozzleId && s.status === "active") || null;
 }
 
-// Tank operations
+// ===== TANK OPERATIONS =====
+
 export function addTankReading(tankId: string, date: string, openingStock: number, closingStock: number, refillQuantity: number, dispensed: number): TankReading {
   const store = getStore();
   const reading: TankReading = {
@@ -259,7 +364,8 @@ export function addRefill(tankId: string, quantity: number): void {
   }
 }
 
-// Employee CRUD
+// ===== EMPLOYEE CRUD =====
+
 export function addEmployee(emp: Omit<Employee, "id" | "createdAt" | "active">): Employee {
   const store = getStore();
   const newEmp: Employee = { ...emp, id: generateId(), active: true, createdAt: new Date().toISOString() };
@@ -277,7 +383,8 @@ export function updateEmployee(id: string, updates: Partial<Employee>): void {
   }
 }
 
-// Credit operations
+// ===== CREDIT OPERATIONS =====
+
 export function settleCreditEntry(id: string): void {
   const store = getStore();
   const idx = store.creditEntries.findIndex(c => c.id === id);
@@ -288,7 +395,8 @@ export function settleCreditEntry(id: string): void {
   }
 }
 
-// Fuel type operations
+// ===== FUEL PRICE =====
+
 export function updateFuelPrice(id: string, price: number): void {
   const store = getStore();
   const idx = store.fuelTypes.findIndex(f => f.id === id);
@@ -318,7 +426,37 @@ export function getPriceHistory(fuelTypeId?: string): PriceChange[] {
   return changes.sort((a, b) => new Date(b.changedAt).getTime() - new Date(a.changedAt).getTime());
 }
 
-// ===== DAILY COLLECTION (Bank Deposit & Cash Tracking) =====
+// ===== EXPENSES =====
+
+export function addExpense(date: string, category: Expense["category"], description: string, amount: number): Expense {
+  const store = getStore();
+  const user = getCurrentUser();
+  const expense: Expense = {
+    id: generateId(),
+    date,
+    category,
+    description,
+    amount,
+    createdBy: user?.id || "",
+    createdAt: new Date().toISOString(),
+  };
+  store.expenses.push(expense);
+  saveStore(store);
+  return expense;
+}
+
+export function deleteExpense(id: string): void {
+  const store = getStore();
+  store.expenses = store.expenses.filter(e => e.id !== id);
+  saveStore(store);
+}
+
+export function getExpensesForDate(date: string): Expense[] {
+  const store = getStore();
+  return store.expenses.filter(e => e.date === date);
+}
+
+// ===== DAILY COLLECTION =====
 
 export function getDailyCollection(date: string): DailyCollection | null {
   const store = getStore();
@@ -339,9 +477,11 @@ export function recalcDailyCollection(date: string): DailyCollection {
 
   let totalSalesAmount = 0;
   let totalCash = 0, totalUpi = 0, totalCard = 0, totalCredit = 0;
+  let totalTestingLiters = 0;
 
   for (const shift of dayShifts) {
     totalSalesAmount += shift.totalAmount || 0;
+    totalTestingLiters += shift.testingQuantity || 0;
     const payment = store.payments.find(p => p.shiftId === shift.id);
     if (payment) {
       totalCash += payment.cash;
@@ -358,6 +498,10 @@ export function recalcDailyCollection(date: string): DailyCollection {
   const bankDeposit = existing?.bankDeposit || 0;
   const remarks = existing?.remarks || "";
 
+  // Expenses for the day
+  const dayExpenses = store.expenses.filter(e => e.date === date);
+  const totalExpenses = dayExpenses.reduce((s, e) => s + e.amount, 0);
+
   return {
     id: existing?.id || generateId(),
     date,
@@ -368,9 +512,11 @@ export function recalcDailyCollection(date: string): DailyCollection {
     totalCredit,
     totalCollected,
     shortage: totalSalesAmount - totalCollected,
+    totalTestingLiters,
+    totalExpenses,
     bankDeposit,
     previousCashBalance,
-    cashInHand: previousCashBalance + totalCash - bankDeposit,
+    cashInHand: previousCashBalance + totalCash - bankDeposit - totalExpenses,
     remarks,
     updatedAt: new Date().toISOString(),
   };
@@ -380,7 +526,7 @@ export function saveDailyCollection(date: string, bankDeposit: number, remarks: 
   const store = getStore();
   const collection = recalcDailyCollection(date);
   collection.bankDeposit = bankDeposit;
-  collection.cashInHand = collection.previousCashBalance + collection.totalCash - bankDeposit;
+  collection.cashInHand = collection.previousCashBalance + collection.totalCash - bankDeposit - collection.totalExpenses;
   collection.remarks = remarks;
   collection.updatedAt = new Date().toISOString();
 
@@ -394,16 +540,8 @@ export function saveDailyCollection(date: string, bankDeposit: number, remarks: 
   return collection;
 }
 
-// Get last closing reading for a nozzle (for auto-fill on next shift start)
-export function getLastClosingReading(nozzleId: string): number | null {
-  const store = getStore();
-  const completed = store.shifts
-    .filter(s => s.nozzleId === nozzleId && s.status === "completed" && s.closingReading !== null)
-    .sort((a, b) => new Date(b.endedAt!).getTime() - new Date(a.endedAt!).getTime());
-  return completed.length > 0 ? completed[0].closingReading : null;
-}
+// ===== HELPERS =====
 
-// Helpers
 export function getNozzlesForPump(pumpId: string): Nozzle[] {
   return getStore().nozzles.filter(n => n.pumpId === pumpId);
 }
@@ -428,6 +566,12 @@ export function getPaymentForShift(shiftId: string): Payment | undefined {
   return getStore().payments.find(p => p.shiftId === shiftId);
 }
 
+export function getShiftsForNozzle(nozzleId: string): Shift[] {
+  return getStore().shifts
+    .filter(s => s.nozzleId === nozzleId)
+    .sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
+}
+
 export function getTodayShifts(): Shift[] {
   const today = new Date().toISOString().split("T")[0];
   return getStore().shifts.filter(s => s.startedAt.startsWith(today));
@@ -442,22 +586,27 @@ export function getTodaySummary() {
   let totalLiters = 0;
   let totalAmount = 0;
   let totalCollected = 0;
+  let totalTestingLiters = 0;
 
   for (const shift of completedShifts) {
     const liters = shift.totalLiters || 0;
     totalLiters += liters;
-    totalAmount += shift.totalAmount || (liters * shift.fuelRate);
+    totalTestingLiters += shift.testingQuantity || 0;
+    totalAmount += shift.totalAmount || ((liters - (shift.testingQuantity || 0)) * shift.fuelRate);
     const payment = store.payments.find(p => p.shiftId === shift.id);
     if (payment) totalCollected += payment.totalCollected;
   }
 
-  // Get daily collection for bank/cash info
   const dc = store.dailyCollections.find(d => d.date === today);
+  const dayExpenses = store.expenses.filter(e => e.date === today);
+  const totalExpenses = dayExpenses.reduce((s, e) => s + e.amount, 0);
 
   return {
     totalLiters,
     totalAmount,
     totalCollected,
+    totalTestingLiters,
+    totalExpenses,
     shortage: totalAmount - totalCollected,
     activeShifts: todayShifts.filter(s => s.status === "active").length,
     bankDeposit: dc?.bankDeposit || 0,

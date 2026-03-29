@@ -5,7 +5,7 @@ import { ArrowLeft, Check, AlertTriangle, Plus, Trash2, Loader2 } from "lucide-r
 import { cn, formatCurrency } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n/useLanguage";
 import {
-  getCurrentUser, getActiveShiftForEmployee, getNozzleById, getPumpById,
+  getCurrentUser, getActiveShiftsForEmployee, getNozzleById, getPumpById,
   getFuelTypeById, endShift
 } from "@/lib/store/data";
 import ImageUpload from "@/components/ImageUpload";
@@ -18,8 +18,10 @@ interface CreditRow {
 }
 
 export default function EndShiftPage() {
+  const [activeShifts, setActiveShifts] = useState<Shift[]>([]);
   const [shift, setShift] = useState<Shift | null>(null);
   const [closing, setClosing] = useState("");
+  const [testingLiters, setTestingLiters] = useState("0");
   const [photo, setPhoto] = useState<string | null>(null);
   const [cash, setCash] = useState("");
   const [upi, setUpi] = useState("");
@@ -27,7 +29,8 @@ export default function EndShiftPage() {
   const [creditAmount, setCreditAmount] = useState("");
   const [creditRows, setCreditRows] = useState<CreditRow[]>([]);
   const [newCredit, setNewCredit] = useState({ customerName: "", vehicleNumber: "", amount: "" });
-  const [step, setStep] = useState(1);
+  const [remarks, setRemarks] = useState("");
+  const [step, setStep] = useState(0); // 0 = shift selection (if multiple), 1-3 = existing steps
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -37,23 +40,36 @@ export default function EndShiftPage() {
   useEffect(() => {
     const user = getCurrentUser();
     if (!user) { router.replace("/login"); return; }
-    const active = getActiveShiftForEmployee(user.id);
-    if (!active) {
+    const shifts = getActiveShiftsForEmployee(user.id);
+    if (shifts.length === 0) {
       setError(lang === "en" ? "No active shift found" : "कोई सक्रिय शिफ्ट नहीं");
       return;
     }
-    setShift(active);
+    setActiveShifts(shifts);
+    if (shifts.length === 1) {
+      setShift(shifts[0]);
+      setStep(1);
+    } else {
+      setStep(0); // show selection screen
+    }
   }, [router, lang]);
+
+  const selectShift = (s: Shift) => {
+    setShift(s);
+    setStep(1);
+  };
 
   const nozzle = shift ? getNozzleById(shift.nozzleId) : null;
   const pump = nozzle ? getPumpById(nozzle.pumpId) : null;
   const fuel = nozzle ? getFuelTypeById(nozzle.fuelTypeId) : null;
 
   const closingNum = parseFloat(closing);
+  const testingNum = parseFloat(testingLiters) || 0;
   const isClosingValid = closing !== "" && !isNaN(closingNum);
   const totalLiters = isClosingValid ? closingNum - (shift?.openingReading || 0) : 0;
+  const salesLiters = Math.max(0, totalLiters - testingNum);
   const isReadingError = isClosingValid && closingNum < (shift?.openingReading || 0);
-  const expectedAmount = totalLiters * (shift?.fuelRate || fuel?.currentPrice || 0);
+  const expectedAmount = salesLiters * (shift?.fuelRate || fuel?.currentPrice || 0);
   const totalCollected = (parseFloat(cash) || 0) + (parseFloat(upi) || 0) + (parseFloat(card) || 0) + (parseFloat(creditAmount) || 0);
   const discrepancy = expectedAmount - totalCollected;
 
@@ -101,6 +117,8 @@ export default function EndShiftPage() {
           card: parseFloat(card) || 0,
           credit: parseFloat(creditAmount) || 0,
         },
+        testingNum,
+        remarks,
         creditRows.length > 0 ? creditRows : undefined
       );
       setSuccess(true);
@@ -123,6 +141,64 @@ export default function EndShiftPage() {
     );
   }
 
+  if (activeShifts.length === 0 && !shift) {
+    return (
+      <div className="max-w-lg mx-auto mt-10">
+        <div className="bg-yellow-50 border border-yellow-200 rounded-2xl p-6 text-center">
+          <AlertTriangle className="w-10 h-10 text-yellow-500 mx-auto mb-3" />
+          <p className="text-yellow-700 font-medium">{error || t("no_active_shift")}</p>
+        </div>
+      </div>
+    );
+  }
+
+  /* Step 0: Multi-shift selection screen */
+  if (step === 0 && activeShifts.length > 1) {
+    return (
+      <div className="max-w-lg mx-auto space-y-6">
+        <div className="flex items-center gap-3">
+          <h2 className="text-xl font-bold text-gray-800">
+            {lang === "hi" ? "कौन सी शिफ्ट समाप्त करें?" : "Which shift to end?"}
+          </h2>
+        </div>
+        <p className="text-sm text-gray-500">
+          {lang === "hi"
+            ? `आपकी ${activeShifts.length} सक्रिय शिफ्ट हैं। एक चुनें।`
+            : `You have ${activeShifts.length} active shifts. Select one.`}
+        </p>
+        <div className="space-y-3">
+          {activeShifts.map(s => {
+            const n = getNozzleById(s.nozzleId);
+            const p = n ? getPumpById(n.pumpId) : null;
+            const f = n ? getFuelTypeById(n.fuelTypeId) : null;
+            return (
+              <button
+                key={s.id}
+                onClick={() => selectShift(s)}
+                className="w-full text-left bg-white border-2 border-gray-200 hover:border-orange-400 rounded-2xl p-4 transition-colors"
+              >
+                <div className="flex justify-between items-center">
+                  <div>
+                    <p className="font-semibold text-gray-800">
+                      {t("pump")} #{p?.pumpNumber} → {t("nozzle")} #{n?.nozzleNumber}
+                    </p>
+                    <p className="text-sm text-gray-500">
+                      {lang === "hi" ? f?.nameHi : f?.name} @ ₹{s.fuelRate}/L
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm text-gray-500">{lang === "hi" ? "ओपनिंग रीडिंग" : "Opening"}</p>
+                    <p className="font-bold text-lg text-gray-700">{s.openingReading}</p>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
   if (!shift) {
     return (
       <div className="max-w-lg mx-auto mt-10">
@@ -139,6 +215,11 @@ export default function EndShiftPage() {
       <div className="flex items-center gap-3">
         {step > 1 && (
           <button onClick={() => { setStep(step - 1); setError(""); }} className="p-2 hover:bg-gray-100 rounded-xl">
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+        )}
+        {step === 1 && activeShifts.length > 1 && (
+          <button onClick={() => { setShift(null); setStep(0); setError(""); setClosing(""); setTestingLiters("0"); setPhoto(null); }} className="p-2 hover:bg-gray-100 rounded-xl">
             <ArrowLeft className="w-5 h-5" />
           </button>
         )}
@@ -164,7 +245,7 @@ export default function EndShiftPage() {
         </div>
       )}
 
-      {/* Step 1: Closing reading + photo */}
+      {/* Step 1: Closing reading + testing qty + photo */}
       {step === 1 && (
         <div className="space-y-6">
           <div>
@@ -189,6 +270,23 @@ export default function EndShiftPage() {
             />
           </div>
 
+          {/* Testing Quantity */}
+          <div>
+            <label className="block text-sm font-medium text-gray-500 mb-2">
+              {lang === "hi" ? "टेस्टिंग मात्रा (L)" : "Testing Qty (L)"}
+            </label>
+            <input
+              type="number"
+              value={testingLiters}
+              onChange={e => setTestingLiters(e.target.value)}
+              className="w-full px-4 py-3 text-lg font-bold text-center border-2 border-gray-200 rounded-2xl focus:border-red-400 focus:ring-2 focus:ring-red-100 outline-none"
+              placeholder="0"
+              step="0.01"
+              min="0"
+              inputMode="decimal"
+            />
+          </div>
+
           {/* Reading error warning */}
           {isReadingError && (
             <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-600 font-medium">
@@ -204,6 +302,16 @@ export default function EndShiftPage() {
                 <span className="text-gray-500">{t("total_liters")}</span>
                 <span className="font-bold text-blue-700">{totalLiters.toFixed(2)} L</span>
               </div>
+              {testingNum > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">{lang === "hi" ? "टेस्टिंग मात्रा" : "Testing Qty"}</span>
+                  <span className="font-medium text-gray-500">-{testingNum.toFixed(2)} L</span>
+                </div>
+              )}
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">{lang === "hi" ? "बिक्री लीटर" : "Sales Liters"}</span>
+                <span className="font-bold text-blue-700">{salesLiters.toFixed(2)} L</span>
+              </div>
               <div className="flex justify-between text-sm">
                 <span className="text-gray-500">{t("price_per_liter")}</span>
                 <span className="font-medium text-gray-600">₹{shift.fuelRate}/L</span>
@@ -212,7 +320,7 @@ export default function EndShiftPage() {
                 <span className="text-gray-500">{t("total_amount")}</span>
                 <span className="font-bold text-blue-700">{formatCurrency(expectedAmount)}</span>
               </div>
-              <p className="text-xs text-blue-400 text-right">{totalLiters.toFixed(2)} L × ₹{shift.fuelRate} = {formatCurrency(expectedAmount)}</p>
+              <p className="text-xs text-blue-400 text-right">{salesLiters.toFixed(2)} L × ₹{shift.fuelRate} = {formatCurrency(expectedAmount)}</p>
             </div>
           )}
           <div>
@@ -234,7 +342,7 @@ export default function EndShiftPage() {
         <div className="space-y-5">
           <p className="text-gray-600 font-medium">{t("payment_breakdown")}</p>
           <div className="bg-orange-50 rounded-xl p-4 text-center">
-            <p className="text-sm text-gray-500">{t("total_amount")} ({totalLiters.toFixed(2)}L × ₹{shift.fuelRate})</p>
+            <p className="text-sm text-gray-500">{t("total_amount")} ({salesLiters.toFixed(2)}L × ₹{shift.fuelRate})</p>
             <p className="text-3xl font-bold text-orange-600">{formatCurrency(expectedAmount)}</p>
           </div>
 
@@ -283,6 +391,20 @@ export default function EndShiftPage() {
             </div>
           </div>
 
+          {/* Remarks */}
+          <div>
+            <label className="block text-sm font-medium text-gray-500 mb-1">
+              {lang === "hi" ? "टिप्पणी" : "Remarks"}
+            </label>
+            <textarea
+              value={remarks}
+              onChange={e => setRemarks(e.target.value)}
+              className="w-full px-3 py-3 border-2 border-gray-200 rounded-xl focus:border-orange-400 outline-none text-sm"
+              rows={3}
+              placeholder={lang === "hi" ? "कोई टिप्पणी लिखें (वैकल्पिक)" : "Add any remarks (optional)"}
+            />
+          </div>
+
           {/* Discrepancy display */}
           <div className={cn(
             "rounded-xl p-4 text-center",
@@ -318,6 +440,10 @@ export default function EndShiftPage() {
               <div className="flex justify-between py-2 border-b"><span className="text-gray-500">{t("opening_reading")}</span><span className="font-medium">{shift.openingReading}</span></div>
               <div className="flex justify-between py-2 border-b"><span className="text-gray-500">{t("closing_reading")}</span><span className="font-bold text-lg">{closing}</span></div>
               <div className="flex justify-between py-2 border-b"><span className="text-gray-500">{t("total_liters")}</span><span className="font-bold">{totalLiters.toFixed(2)} L</span></div>
+              {testingNum > 0 && (
+                <div className="flex justify-between py-2 border-b"><span className="text-gray-500">{lang === "hi" ? "टेस्टिंग मात्रा" : "Testing Qty"}</span><span className="font-medium">-{testingNum.toFixed(2)} L</span></div>
+              )}
+              <div className="flex justify-between py-2 border-b"><span className="text-gray-500">{lang === "hi" ? "बिक्री लीटर" : "Sales Liters"}</span><span className="font-bold">{salesLiters.toFixed(2)} L</span></div>
               <div className="flex justify-between py-2 border-b"><span className="text-gray-500">{t("price_per_liter")}</span><span className="font-medium">₹{shift.fuelRate}/L</span></div>
               <div className="flex justify-between py-2 border-b"><span className="text-gray-500">{t("total_amount")}</span><span className="font-bold">{formatCurrency(expectedAmount)}</span></div>
               <div className="flex justify-between py-2 border-b"><span className="text-gray-500">{t("cash")}</span><span>{formatCurrency(parseFloat(cash) || 0)}</span></div>
@@ -331,6 +457,12 @@ export default function EndShiftPage() {
                 <span>{t("discrepancy")}</span>
                 <span>{discrepancy > 0 ? "-" : discrepancy < 0 ? "+" : ""}{formatCurrency(Math.abs(discrepancy))}</span>
               </div>
+              {remarks && (
+                <div className="flex justify-between py-2 border-t">
+                  <span className="text-gray-500">{lang === "hi" ? "टिप्पणी" : "Remarks"}</span>
+                  <span className="text-right max-w-[60%] text-gray-700">{remarks}</span>
+                </div>
+              )}
             </div>
           </div>
 

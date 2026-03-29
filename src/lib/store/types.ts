@@ -30,6 +30,7 @@ export interface Nozzle {
   nozzleNumber: number;
   fuelTypeId: string;
   status: "active" | "inactive";
+  initialReading: number;        // seed reading when nozzle first set up
 }
 
 export interface Shift {
@@ -38,12 +39,14 @@ export interface Shift {
   nozzleId: string;
   openingReading: number;
   closingReading: number | null;
-  totalLiters: number | null;
-  fuelRate: number;           // rate per liter at time of shift
-  totalAmount: number | null; // auto: totalLiters * fuelRate
+  totalLiters: number | null;     // total dispensed (including testing)
+  testingQuantity: number;        // liters used for testing (not sold)
+  fuelRate: number;               // rate per liter at time of shift
+  totalAmount: number | null;     // auto: (totalLiters - testingQuantity) * fuelRate
   openingPhotoUrl: string | null;
   closingPhotoUrl: string | null;
   status: "active" | "completed";
+  remarks: string;                // employee notes
   startedAt: string;
   endedAt: string | null;
 }
@@ -91,24 +94,36 @@ export interface PriceChange {
   fuelTypeId: string;
   oldPrice: number;
   newPrice: number;
-  changedBy: string;           // employee id (admin)
-  changedAt: string;           // ISO timestamp
+  changedBy: string;
+  changedAt: string;
+}
+
+export interface Expense {
+  id: string;
+  date: string;                  // YYYY-MM-DD
+  category: "salary" | "maintenance" | "electricity" | "other";
+  description: string;
+  amount: number;
+  createdBy: string;             // employee id
+  createdAt: string;
 }
 
 // Daily cash & bank tracking
 export interface DailyCollection {
   id: string;
-  date: string;               // YYYY-MM-DD
-  totalSalesAmount: number;    // auto: sum of all completed shifts' totalAmount
-  totalCash: number;           // auto: sum of all shift payments cash
-  totalUpi: number;            // auto: sum of all shift payments upi
-  totalCard: number;           // auto: sum of all shift payments card
-  totalCredit: number;         // auto: sum of all shift payments credit
-  totalCollected: number;      // auto: cash + upi + card + credit
-  shortage: number;            // auto: totalSalesAmount - totalCollected
-  bankDeposit: number;         // manually entered
-  previousCashBalance: number; // carried forward
-  cashInHand: number;          // auto: previousCashBalance + totalCash - bankDeposit
+  date: string;
+  totalSalesAmount: number;
+  totalCash: number;
+  totalUpi: number;
+  totalCard: number;
+  totalCredit: number;
+  totalCollected: number;
+  shortage: number;
+  totalTestingLiters: number;     // total testing quantity for the day
+  totalExpenses: number;          // sum of day's expenses
+  bankDeposit: number;            // manually entered
+  previousCashBalance: number;    // carried forward
+  cashInHand: number;             // auto: previousCashBalance + totalCash - bankDeposit - totalExpenses
   remarks: string;
   updatedAt: string;
 }
