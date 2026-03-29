@@ -33,24 +33,38 @@ export default function BottomNav() {
   const items = user?.role === "admin" ? adminNav : employeeNav;
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 bg-white border-t md:hidden z-40">
-      <div className="flex justify-around items-center py-2">
-        {items.map(item => {
-          const active = pathname === item.href;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "flex flex-col items-center gap-1 px-3 py-1.5 rounded-lg min-w-[64px]",
-                active ? "text-orange-600" : "text-gray-400"
-              )}
-            >
-              <item.icon className={cn("w-6 h-6", active && "text-orange-500")} />
-              <span className="text-[10px] font-medium">{t(item.label)}</span>
-            </Link>
-          );
-        })}
+    <nav className="fixed bottom-3 left-3 right-3 md:hidden z-40">
+      <div className="backdrop-blur-xl bg-white/75 border border-white/40 shadow-lg shadow-black/5 rounded-2xl px-2 py-1.5 pb-safe">
+        <div className="flex justify-around items-center">
+          {items.map(item => {
+            const active = pathname === item.href;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  "flex flex-col items-center gap-0.5 px-3 py-2 rounded-xl min-w-[60px] transition-all",
+                  active ? "text-orange-600" : "text-gray-400 active:scale-95"
+                )}
+              >
+                <div className={cn(
+                  "w-9 h-9 rounded-xl flex items-center justify-center transition-all",
+                  active
+                    ? "bg-gradient-to-br from-orange-500 to-amber-500 shadow-md shadow-orange-200/50"
+                    : "bg-transparent"
+                )}>
+                  <item.icon className={cn("w-5 h-5", active ? "text-white" : "text-gray-400")} />
+                </div>
+                <span className={cn(
+                  "text-[10px] font-medium",
+                  active ? "text-orange-600 font-semibold" : "text-gray-400"
+                )}>
+                  {t(item.label)}
+                </span>
+              </Link>
+            );
+          })}
+        </div>
       </div>
     </nav>
   );

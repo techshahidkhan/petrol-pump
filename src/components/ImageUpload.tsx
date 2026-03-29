@@ -14,7 +14,6 @@ export default function ImageUpload({ onUpload, value }: ImageUploadProps) {
   const { t } = useLanguage();
 
   const handleFile = (file: File) => {
-    // Compress by drawing to canvas
     const reader = new FileReader();
     reader.onload = (e) => {
       const img = new Image();
@@ -53,15 +52,16 @@ export default function ImageUpload({ onUpload, value }: ImageUploadProps) {
   return (
     <div className="space-y-3">
       {preview ? (
-        <div className="relative">
-          <img src={preview} alt="Meter reading" className="w-full max-w-xs rounded-xl border shadow-sm" />
+        <div className="relative inline-block animate-scale-in">
+          <img src={preview} alt="Meter reading" className="w-full max-w-xs rounded-2xl border border-gray-200/50 shadow-lg" />
+          <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/30 to-transparent rounded-b-2xl" />
           <button
             onClick={clear}
-            className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1.5 shadow-lg"
+            className="absolute top-2 right-2 bg-gradient-to-br from-red-500 to-rose-500 text-white rounded-full p-1.5 shadow-lg shadow-red-200/50 hover:scale-110 transition-transform"
           >
             <X className="w-4 h-4" />
           </button>
-          <div className="absolute bottom-2 left-2 bg-green-500 text-white rounded-full p-1.5 shadow-lg">
+          <div className="absolute bottom-2 left-2 bg-gradient-to-br from-emerald-500 to-green-500 text-white rounded-full p-1.5 shadow-lg shadow-green-200/50">
             <Check className="w-4 h-4" />
           </div>
         </div>
@@ -74,10 +74,12 @@ export default function ImageUpload({ onUpload, value }: ImageUploadProps) {
                 fileRef.current.click();
               }
             }}
-            className="flex-1 flex flex-col items-center gap-2 p-6 border-2 border-dashed border-orange-300 rounded-xl bg-orange-50 hover:bg-orange-100 transition-colors"
+            className="flex-1 flex flex-col items-center gap-2.5 p-5 border-2 border-dashed border-orange-200 rounded-2xl bg-gradient-to-br from-orange-50/50 to-amber-50/50 hover:from-orange-100/60 hover:to-amber-100/60 hover:border-orange-300 hover:scale-[1.02] active:scale-[0.98] transition-all"
           >
-            <Camera className="w-8 h-8 text-orange-500" />
-            <span className="text-sm font-medium text-orange-700">{t("take_photo")}</span>
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center shadow-md shadow-orange-200/50">
+              <Camera className="w-6 h-6 text-white" />
+            </div>
+            <span className="text-sm font-semibold text-orange-700">{t("take_photo")}</span>
           </button>
           <button
             onClick={() => {
@@ -86,10 +88,12 @@ export default function ImageUpload({ onUpload, value }: ImageUploadProps) {
                 fileRef.current.click();
               }
             }}
-            className="flex-1 flex flex-col items-center gap-2 p-6 border-2 border-dashed border-gray-300 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors"
+            className="flex-1 flex flex-col items-center gap-2.5 p-5 border-2 border-dashed border-gray-200 rounded-2xl bg-gradient-to-br from-gray-50/50 to-slate-50/50 hover:from-gray-100/60 hover:to-slate-100/60 hover:border-gray-300 hover:scale-[1.02] active:scale-[0.98] transition-all"
           >
-            <Upload className="w-8 h-8 text-gray-500" />
-            <span className="text-sm font-medium text-gray-700">{t("upload_photo")}</span>
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-gray-400 to-slate-500 flex items-center justify-center shadow-md shadow-gray-200/50">
+              <Upload className="w-6 h-6 text-white" />
+            </div>
+            <span className="text-sm font-semibold text-gray-600">{t("upload_photo")}</span>
           </button>
         </div>
       )}
