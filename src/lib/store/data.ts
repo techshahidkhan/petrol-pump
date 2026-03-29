@@ -384,6 +384,15 @@ export function saveDailyCollection(date: string, bankDeposit: number, remarks: 
   return collection;
 }
 
+// Get last closing reading for a nozzle (for auto-fill on next shift start)
+export function getLastClosingReading(nozzleId: string): number | null {
+  const store = getStore();
+  const completed = store.shifts
+    .filter(s => s.nozzleId === nozzleId && s.status === "completed" && s.closingReading !== null)
+    .sort((a, b) => new Date(b.endedAt!).getTime() - new Date(a.endedAt!).getTime());
+  return completed.length > 0 ? completed[0].closingReading : null;
+}
+
 // Helpers
 export function getNozzlesForPump(pumpId: string): Nozzle[] {
   return getStore().nozzles.filter(n => n.pumpId === pumpId);

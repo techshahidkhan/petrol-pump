@@ -6,7 +6,8 @@ import { cn, formatCurrency } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n/useLanguage";
 import {
   getCurrentUser, getStore, getNozzlesForPump, getActiveShiftForNozzle,
-  getFuelTypeById, startShift, getActiveShiftForEmployee, getEmployeeById
+  getFuelTypeById, startShift, getActiveShiftForEmployee, getEmployeeById,
+  getLastClosingReading
 } from "@/lib/store/data";
 import ImageUpload from "@/components/ImageUpload";
 import type { Pump, Nozzle } from "@/lib/store/types";
@@ -18,6 +19,7 @@ export default function StartShiftPage() {
   const [nozzles, setNozzles] = useState<Nozzle[]>([]);
   const [selectedNozzle, setSelectedNozzle] = useState<Nozzle | null>(null);
   const [reading, setReading] = useState("");
+  const [lastReading, setLastReading] = useState<number | null>(null);
   const [photo, setPhoto] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
@@ -53,6 +55,12 @@ export default function StartShiftPage() {
     }
     setError("");
     setSelectedNozzle(nozzle);
+    // Auto-fill opening reading from last closing reading of this nozzle
+    const prevReading = getLastClosingReading(nozzle.id);
+    setLastReading(prevReading);
+    if (prevReading !== null) {
+      setReading(String(prevReading));
+    }
     setStep(3);
   };
 
@@ -177,6 +185,18 @@ export default function StartShiftPage() {
       {step === 3 && (
         <div className="space-y-6">
           <p className="text-gray-600 font-medium">{t("enter_reading")}</p>
+
+          {/* Previous closing reading hint */}
+          {lastReading !== null && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center justify-between">
+              <div>
+                <p className="text-xs text-blue-500 font-medium">{lang === "hi" ? "पिछली क्लोज़िंग रीडिंग" : "Previous Closing Reading"}</p>
+                <p className="text-lg font-bold text-blue-700">{lastReading}</p>
+              </div>
+              <span className="text-xs text-blue-400">{lang === "hi" ? "ऑटो-भरा" : "Auto-filled"} ✓</span>
+            </div>
+          )}
+
           <div>
             <label className="block text-sm font-medium text-gray-500 mb-2">{t("opening_reading")}</label>
             <input
@@ -194,6 +214,15 @@ export default function StartShiftPage() {
             <label className="block text-sm font-medium text-gray-500 mb-2">{t("upload_photo")}</label>
             <ImageUpload onUpload={setPhoto} value={photo} />
           </div>
+
+          {/* Warning if reading is less than previous closing */}
+          {lastReading !== null && reading && parseFloat(reading) < lastReading && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-600 font-medium">
+              ⚠️ {lang === "hi"
+                ? `रीडिंग पिछली क्लोज़िंग (${lastReading}) से कम है!`
+                : `Reading is less than previous closing (${lastReading})!`}
+            </div>
+          )}
 
           <button
             onClick={() => { if (reading) setStep(4); else setError(lang === "en" ? "Enter reading" : "रीडिंग दर्ज करें"); }}
